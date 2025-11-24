@@ -591,8 +591,10 @@ void AnimateInsert(int value) {
         auto n = tree.Find(value);
         if (n) n->highlighted = false;
     }));
-    // reflow tree positions with animation
-    AnimateReflow(0.6f);
+    // reflow tree positions with animation - do this in a step's onFinish so it happens after insertion
+    animator.Push(Step(0.01f, nullptr, [=](){
+        AnimateReflow(0.6f);
+    }));
 }
 
 // Search animation: step-by-step highlight nodes, stop if found
