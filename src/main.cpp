@@ -358,18 +358,25 @@ struct UI {
 
         // Typing
         if (typing) {
-            int key = GetKeyPressed();
+            // Handle backspace
+            if (IsKeyPressed(KEY_BACKSPACE)) {
+                if (!inputText.empty()) inputText.pop_back();
+            }
+            
+            // Handle enter
+            if (IsKeyPressed(KEY_ENTER)) {
+                typing = false;
+                OnEnterPressed();
+            }
+            
+            // Handle character input
+            int key = GetCharPressed();
             while (key > 0) {
-                if ((key >= 48 && key <= 57) || key == 45) { // digits or minus sign
+                // Allow digits (0-9) and minus sign for negative numbers
+                if ((key >= 48 && key <= 57) || key == 45) {
                     inputText.push_back((char)key);
-                } else if (key == 8) { // backspace
-                    if (!inputText.empty()) inputText.pop_back();
-                } else if (key == 13 || key == 10) {
-                    // Enter pressed
-                    typing = false;
-                    OnEnterPressed();
                 }
-                key = GetKeyPressed();
+                key = GetCharPressed();
             }
         } else {
             // global keyboard shortcuts
