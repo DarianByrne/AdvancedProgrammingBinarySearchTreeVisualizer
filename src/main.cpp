@@ -265,19 +265,29 @@ struct Button {
     Rectangle rect;
     string label;
     bool pressed = false;
+    bool disabled = false;
     function<void()> onClick;
     Button() {}
     Button(float x, float y, float w, float h, const string &l, function<void()> cb)
         : rect{ x,y,w,h }, label(l), onClick(cb) {}
     void Draw() {
-        Color bg = pressed ? Fade((Color){150,150,160,255}, 0.95f) : Fade((Color){100,100,120,255}, 0.9f);
+        Color bg;
+        Color textColor;
+        if (disabled) {
+            bg = Fade((Color){60,60,70,255}, 0.5f);
+            textColor = Fade(TEXT_COLOR, 0.3f);
+        } else {
+            bg = pressed ? Fade((Color){150,150,160,255}, 0.95f) : Fade((Color){100,100,120,255}, 0.9f);
+            textColor = TEXT_COLOR;
+        }
         DrawRectangleRec(rect, bg);
-        DrawRectangleLinesEx(rect, 2, (Color){40,40,60,255});
+        DrawRectangleLinesEx(rect, 2, disabled ? Fade((Color){40,40,60,255}, 0.5f) : (Color){40,40,60,255});
         int fontSize = 18;
         Vector2 m = MeasureTextEx(GetFontDefault(), label.c_str(), fontSize, 1);
-        DrawText(label.c_str(), (int)(rect.x + (rect.width-m.x)/2), (int)(rect.y + (rect.height-m.y)/2), fontSize, TEXT_COLOR);
+        DrawText(label.c_str(), (int)(rect.x + (rect.width-m.x)/2), (int)(rect.y + (rect.height-m.y)/2), fontSize, textColor);
     }
     bool CheckClick(Vector2 mousePoint) {
+        if (disabled) return false;
         if (CheckCollisionPointRec(mousePoint, rect)) {
             if (onClick) onClick();
             return true;
@@ -317,19 +327,32 @@ struct UI {
     }
 
     void Draw() {
+        // Update disabled state based on animator
+        bool isBusy = animator.IsBusy();
+        for (auto &b : buttons) b.disabled = isBusy;
+        speedBtn.disabled = false; // Speed button always enabled
+        // resetBtn.disabled = false; // Reset button always enabled (can be used to cancel)
+        
         // UI background top panel
         DrawRectangle(0, 0, SCREEN_WIDTH, UI_HEIGHT, UI_BG);
         // draw buttons
         for (auto &b : buttons) b.Draw();
-        DrawRectangleRec(inputRect, Fade((Color){255,255,255,30}, 0.1f));
-        DrawRectangleLinesEx(inputRect, 2, (Color){40,40,60,255});
+        
+        // Draw input field with disabled state
+        Color inputBg = isBusy ? Fade((Color){255,255,255,10}, 0.1f) : Fade((Color){255,255,255,30}, 0.1f);
+        Color inputBorder = isBusy ? Fade((Color){40,40,60,255}, 0.5f) : (Color){40,40,60,255};
+        Color inputTextColor = isBusy ? Fade(TEXT_COLOR, 0.3f) : TEXT_COLOR;
+        DrawRectangleRec(inputRect, inputBg);
+        DrawRectangleLinesEx(inputRect, 2, inputBorder);
         string label = "Value: " + inputText;
-        DrawText(label.c_str(), (int)(inputRect.x + 8), (int)(inputRect.y + 8), 20, TEXT_COLOR);
+        DrawText(label.c_str(), (int)(inputRect.x + 8), (int)(inputRect.y + 8), 20, inputTextColor);
+        
         speedBtn.Draw();
         resetBtn.Draw();
 
-        // small hints
-        DrawText("Click nodes to highlight / select (visual only). Press Enter after typing number.", 12, UI_HEIGHT - 18, 14, Fade(TEXT_COLOR, 0.6f));
+        // small hints with status
+        string hint = isBusy ? "Animation in progress... (Reset to cancel)" : "Click nodes to highlight / select (visual only). Press Enter after typing number.";
+        DrawText(hint.c_str(), 12, UI_HEIGHT - 18, 14, Fade(TEXT_COLOR, 0.6f));
     }
 
     void HandleInput() {
@@ -356,8 +379,8 @@ struct UI {
             resetBtn.pressed = false;
         }
 
-        // Typing
-        if (typing) {
+        // Typing (only if not busy)
+        if (typing && !animator.IsBusy()) {
             // Handle backspace
             if (IsKeyPressed(KEY_BACKSPACE)) {
                 if (!inputText.empty()) inputText.pop_back();
@@ -412,21 +435,25 @@ void AnimateTraversal(const string &which);
 
 // UI callbacks implement
 void UI::OnInsert() {
+    if (animator.IsBusy()) return;
     bool ok; int v = GetInputValue(ok);
     if (!ok) return;
     AnimateInsert(v);
 }
 void UI::OnDelete() {
+    if (animator.IsBusy()) return;
     bool ok; int v = GetInputValue(ok);
     if (!ok) return;
     AnimateDelete(v);
 }
 void UI::OnSearch() {
+    if (animator.IsBusy()) return;
     bool ok; int v = GetInputValue(ok);
     if (!ok) return;
     AnimateSearch(v);
 }
 void UI::OnTraversal(const string &which) {
+    if (animator.IsBusy()) return;
     AnimateTraversal(which);
 }
 void UI::ToggleSpeed() {
@@ -443,6 +470,7 @@ void UI::Reset() {
 }
 void UI::OnEnterPressed() {
     // default: Insert with Enter
+    if (animator.IsBusy()) return;
     bool ok; int v = GetInputValue(ok);
     if (!ok) return;
     AnimateInsert(v);
@@ -668,8 +696,10 @@ void AnimateDelete(int value) {
     animator.Push(Step(0.02f, nullptr, [=](){
         tree.DeleteRaw(value);
     }));
-    // Reflow and animate
-    AnimateReflow(0.8f);
+    // Reflow and animate - do this in a step's onFinish so it happens after deletion
+    animator.Push(Step(0.01f, nullptr, [=](){
+        AnimateReflow(0.8f);
+    }));
 }
 
 // Traversal animation: visit nodes in order and highlight them one by one
