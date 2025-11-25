@@ -829,28 +829,66 @@ void AnimateSearch(int value) {
         // nothing
         return;
     }
+    
+    // Step 0: node = root
+    animator.Push(Step(0.3f, [](float t){ currentStep = 0; }, nullptr));
+    
     while (cur) {
         auto node = cur;
-        animator.Push(Step(0.45f, [node](float t){
+        int nodeValue = node->value;
+        
+        // Step 1: while (node != null) - check loop condition
+        animator.Push(Step(0.15f, [](float t){ currentStep = 1; }, nullptr));
+        
+        // Step 2: if (value == node.value) - comparing
+        animator.Push(Step(0.25f, [node](float t){
+            currentStep = 2;
             node->highlighted = true;
             node->highlightColor = HIGHLIGHT_COMP;
-        }, [node](){
-            node->highlighted = false;
-        }));
+        }, nullptr));
+        
         if (value == cur->value) {
-            // found: highlight target and stop with final highlight
+            // found: Step 3: return node
             animator.Push(Step(0.6f, [node](float t){
+                currentStep = 3;
                 node->highlighted = true;
                 node->highlightColor = HIGHLIGHT_CUR;
             }, [node](){
                 node->highlighted = false;
             }));
             return;
-        } else if (value < cur->value) cur = cur->left;
-        else cur = cur->right;
+        } else if (value < cur->value) {
+            // Step 4: else if (value < node.value)
+            animator.Push(Step(0.2f, [node](float t){
+                currentStep = 4;
+            }, nullptr));
+            // Step 5: node = node.left
+            animator.Push(Step(0.15f, [node](float t){
+                currentStep = 5;
+            }, [node](){
+                node->highlighted = false;
+            }));
+            cur = cur->left;
+        } else {
+            // Step 4: else if condition was false, so we skip to else
+            animator.Push(Step(0.15f, [](float t){
+                currentStep = 4; // Show the else if briefly
+            }, nullptr));
+            // Step 6: else node = node.right
+            animator.Push(Step(0.2f, [node](float t){
+                currentStep = 6;
+            }, [node](){
+                node->highlighted = false;
+            }));
+            cur = cur->right;
+        }
     }
-    // not found -> small feedback beep like highlight top area (we'll just a longer pause)
-    animator.Push(Step(0.4f, nullptr, nullptr));
+    
+    // Check loop condition one more time (will be false)
+    animator.Push(Step(0.15f, [](float t){ currentStep = 1; }, nullptr));
+    
+    // not found -> Step 7: return null
+    animator.Push(Step(0.4f, [](float t){ currentStep = 7; }, nullptr));
 }
 
 // Deletion animation: we will show comparisons to locate node, highlight it, then animate structural changes.
