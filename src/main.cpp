@@ -674,9 +674,12 @@ void AnimateInsert(int value) {
         }));
     }
     // After comparisons, create the new node visually near last comparison node and animate insertion
+    // Use a shared pointer to track the specific node we insert
+    shared_ptr<shared_ptr<TreeNode>> insertedNodeRef = make_shared<shared_ptr<TreeNode>>(nullptr);
     animator.Push(Step(0.02f, nullptr, [=](){
         // insert raw into data structure
         auto newNode = tree.InsertRaw(value);
+        *insertedNodeRef = newNode; // Store reference to the actual inserted node
         // position it initially at same place as parent (or center)
         if (!newNode->parent) newNode->pos = { SCREEN_WIDTH/2.0f, UI_HEIGHT + 20.0f };
         else newNode->pos = newNode->parent->pos;
@@ -691,9 +694,8 @@ void AnimateInsert(int value) {
     animator.Push(Step(0.4f, [=](float t){
         // pulse highlight
     }, [=](){
-        // clear highlight
-        auto n = tree.Find(value);
-        if (n) n->highlighted = false;
+        // clear highlight on the specific node we inserted
+        if (*insertedNodeRef) (*insertedNodeRef)->highlighted = false;
     }));
     // reflow tree positions with animation - do this in a step's onFinish so it happens after insertion
     animator.Push(Step(0.01f, nullptr, [=](){
