@@ -260,6 +260,82 @@ public:
 // Global tree instance
 BST tree;
 
+// Camera for auto-zoom
+Camera2D camera = { 0 };
+float targetZoom = 1.0f;
+Vector2 targetOffset = { 0, 0 };
+const float CAMERA_LERP_SPEED = 4.0f;
+const float MIN_ZOOM = 0.3f;
+const float MAX_ZOOM = 1.5f;
+const float ZOOM_PADDING = 80.0f; // Extra space around the tree
+
+// --------------------------- Camera helpers ---------------------------
+struct TreeBounds {
+    float minX, maxX, minY, maxY;
+    bool empty;
+};
+
+TreeBounds GetTreeBounds(shared_ptr<TreeNode> n) {
+    TreeBounds bounds = { 0, 0, 0, 0, true };
+    if (!n) return bounds;
+    
+    std::function<void(shared_ptr<TreeNode>)> traverse = [&](shared_ptr<TreeNode> node) {
+        if (!node) return;
+        if (bounds.empty) {
+            bounds.minX = bounds.maxX = node->pos.x;
+            bounds.minY = bounds.maxY = node->pos.y;
+            bounds.empty = false;
+        } else {
+            if (node->pos.x < bounds.minX) bounds.minX = node->pos.x;
+            if (node->pos.x > bounds.maxX) bounds.maxX = node->pos.x;
+            if (node->pos.y < bounds.minY) bounds.minY = node->pos.y;
+            if (node->pos.y > bounds.maxY) bounds.maxY = node->pos.y;
+        }
+        traverse(node->left);
+        traverse(node->right);
+    };
+    traverse(n);
+    return bounds;
+}
+
+void UpdateCamera(float dt) {
+    // Calculate target camera position and zoom to fit tree
+    TreeBounds bounds = GetTreeBounds(tree.root);
+    
+    if (bounds.empty) {
+        // No tree, center on screen with default zoom
+        targetZoom = 1.0f;
+        targetOffset = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+    } else {
+        // Add padding to bounds
+        float treeWidth = bounds.maxX - bounds.minX + ZOOM_PADDING * 2;
+        float treeHeight = bounds.maxY - bounds.minY + ZOOM_PADDING * 2;
+        
+        // Calculate center of tree
+        float treeCenterX = (bounds.minX + bounds.maxX) / 2.0f;
+        float treeCenterY = (bounds.minY + bounds.maxY) / 2.0f;
+        
+        // Calculate zoom to fit tree in view (accounting for UI areas)
+        float viewWidth = SCREEN_WIDTH;
+        float viewHeight = SCREEN_HEIGHT - UI_HEIGHT - 32; // Subtract UI top and bottom panels
+        
+        float zoomX = viewWidth / treeWidth;
+        float zoomY = viewHeight / treeHeight;
+        targetZoom = std::min(zoomX, zoomY);
+        targetZoom = std::clamp(targetZoom, MIN_ZOOM, MAX_ZOOM);
+        
+        // Target offset to center the tree
+        targetOffset.x = SCREEN_WIDTH / 2.0f - treeCenterX * targetZoom;
+        targetOffset.y = (UI_HEIGHT + (SCREEN_HEIGHT - 32 - UI_HEIGHT) / 2.0f) - treeCenterY * targetZoom;
+    }
+    
+    // Smooth lerp camera to target
+    float lerpFactor = 1.0f - powf(0.001f, dt * CAMERA_LERP_SPEED);
+    camera.zoom = Lerp(camera.zoom, targetZoom, lerpFactor);
+    camera.offset = Lerp(camera.offset, targetOffset, lerpFactor);
+    camera.target = { 0, 0 };
+}
+
 // --------------------------- Visual / UI helpers ---------------------------
 struct Button {
     Rectangle rect;
@@ -722,14 +798,17 @@ void AnimateTraversal(const string &which) {
 
 // --------------------------- Misc helpers ---------------------------
 // Click detection for nodes: allow clicking to highlight a node (visual only)
-shared_ptr<TreeNode> GetNodeAtPoint(shared_ptr<TreeNode> n, Vector2 pt) {
+shared_ptr<TreeNode> GetNodeAtPoint(shared_ptr<TreeNode> n, Vector2 screenPt) {
     if (!n) return nullptr;
+    // Transform screen point to world space
+    Vector2 worldPt = GetScreenToWorld2D(screenPt, camera);
+    
     // post-order depth-first search to prefer children closer to the click
-    auto left = GetNodeAtPoint(n->left, pt);
+    auto left = GetNodeAtPoint(n->left, screenPt);
     if (left) return left;
-    auto right = GetNodeAtPoint(n->right, pt);
+    auto right = GetNodeAtPoint(n->right, screenPt);
     if (right) return right;
-    float dx = n->pos.x - pt.x, dy = n->pos.y - pt.y;
+    float dx = n->pos.x - worldPt.x, dy = n->pos.y - worldPt.y;
     if (dx*dx + dy*dy <= NODE_RADIUS*NODE_RADIUS) return n;
     return nullptr;
 }
@@ -738,6 +817,12 @@ shared_ptr<TreeNode> GetNodeAtPoint(shared_ptr<TreeNode> n, Vector2 pt) {
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "BST Visualiser - Raylib");
     SetTargetFPS(60);
+
+    // Initialize camera
+    camera.offset = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+    camera.target = { 0, 0 };
+    camera.rotation = 0.0f;
+    camera.zoom = 1.0f;
 
     ui.Init();
 
@@ -789,19 +874,28 @@ int main() {
 
         // Update any continuous node animations (keeps nodes synced)
         UpdateNodeAnimations(tree.root, dt);
+        
+        // Update camera to auto-zoom and fit tree
+        UpdateCamera(dt);
 
         // Drawing
         BeginDrawing();
         ClearBackground(BG);
 
+        // Begin camera mode for tree rendering
+        BeginMode2D(camera);
+        
         // draw tree edges & nodes
         if (tree.root) {
             DrawTreeNodes(tree.root);
         } else {
+            // Note: This text won't be affected by camera zoom
             DrawText("Tree is empty. Insert a number to begin.", 420, 220, 20, Fade(TEXT_COLOR, 0.7f));
         }
+        
+        EndMode2D();
 
-        // top UI
+        // top UI (drawn after camera mode, so not affected by zoom)
         ui.Draw();
 
         // bottom panel: status
