@@ -32,11 +32,13 @@ using std::make_shared;
 static const int SCREEN_WIDTH = 1200;
 static const int SCREEN_HEIGHT = 760;
 static const int UI_HEIGHT = 100;
+static const int ALGORITHM_PANEL_WIDTH = 280;
 static const float NODE_RADIUS = 22.0f;
 static const float LEVEL_STEP_Y = 90.0f;
-static const float H_SPACING = 40.0f;
+static const float H_SPACING = 30.0f; // Reduced for more compact horizontal spacing
 static const Color BG = (Color){30, 30, 40, 255};
 static const Color UI_BG = (Color){20, 20, 28, 220};
+static const Color PANEL_BG = (Color){25, 25, 35, 240};
 static const Color NODE_COLOR = (Color){70, 130, 180, 255};
 static const Color NODE_BORDER = (Color){30, 60, 80, 255};
 static const Color TEXT_COLOR = WHITE;
@@ -238,11 +240,11 @@ public:
             return d;
         };
 
-        // Compute spacing: full width is SCREEN_WIDTH minus margins
-        const float leftMargin = 80.0f;
-        const float rightMargin = 80.0f;
+        // Compute spacing: account for algorithm panel on left
+        const float leftMargin = ALGORITHM_PANEL_WIDTH + 40.0f;
+        const float rightMargin = 40.0f;
         float usable = (float)SCREEN_WIDTH - leftMargin - rightMargin;
-        float stepX = (nodes.empty()) ? 0 : std::max(40.0f, usable / (float)std::max(1, (int)nodes.size()));
+        float stepX = (nodes.empty()) ? 0 : std::max(30.0f, usable / (float)std::max(1, (int)nodes.size()));
 
         for (auto &n : nodes) {
             int i = idx[n.get()];
@@ -259,6 +261,11 @@ public:
 
 // Global tree instance
 BST tree;
+
+// Current algorithm being executed
+string currentAlgorithm = "";
+vector<string> algorithmSteps;
+int currentStep = -1;
 
 // Camera for auto-zoom
 Camera2D camera = { 0 };
@@ -315,8 +322,8 @@ void UpdateCamera(float dt) {
         float treeCenterX = (bounds.minX + bounds.maxX) / 2.0f;
         float treeCenterY = (bounds.minY + bounds.maxY) / 2.0f;
         
-        // Calculate zoom to fit tree in view (accounting for UI areas)
-        float viewWidth = SCREEN_WIDTH;
+        // Calculate zoom to fit tree in view (accounting for UI areas and algorithm panel)
+        float viewWidth = SCREEN_WIDTH - ALGORITHM_PANEL_WIDTH;
         float viewHeight = SCREEN_HEIGHT - UI_HEIGHT - 32; // Subtract UI top and bottom panels
         
         float zoomX = viewWidth / treeWidth;
@@ -324,8 +331,8 @@ void UpdateCamera(float dt) {
         targetZoom = std::min(zoomX, zoomY);
         targetZoom = std::clamp(targetZoom, MIN_ZOOM, MAX_ZOOM);
         
-        // Target offset to center the tree
-        targetOffset.x = SCREEN_WIDTH / 2.0f - treeCenterX * targetZoom;
+        // Target offset to center the tree (accounting for algorithm panel)
+        targetOffset.x = ALGORITHM_PANEL_WIDTH + (SCREEN_WIDTH - ALGORITHM_PANEL_WIDTH) / 2.0f - treeCenterX * targetZoom;
         targetOffset.y = (UI_HEIGHT + (SCREEN_HEIGHT - 32 - UI_HEIGHT) / 2.0f) - treeCenterY * targetZoom;
     }
     
@@ -334,6 +341,59 @@ void UpdateCamera(float dt) {
     camera.zoom = Lerp(camera.zoom, targetZoom, lerpFactor);
     camera.offset = Lerp(camera.offset, targetOffset, lerpFactor);
     camera.target = { 0, 0 };
+}
+
+// --------------------------- Algorithm Panel ---------------------------
+void DrawAlgorithmPanel() {
+    // Draw panel background
+    DrawRectangle(0, UI_HEIGHT, ALGORITHM_PANEL_WIDTH, SCREEN_HEIGHT - UI_HEIGHT - 32, PANEL_BG);
+    DrawLine(ALGORITHM_PANEL_WIDTH, UI_HEIGHT, ALGORITHM_PANEL_WIDTH, SCREEN_HEIGHT - 32, Fade((Color){60,60,80,255}, 0.8f));
+    
+    int yPos = UI_HEIGHT + 12;
+    int xPos = 12;
+    
+    // Draw title
+    DrawText("Current Algorithm:", xPos, yPos, 16, Fade(TEXT_COLOR, 0.8f));
+    yPos += 24;
+    
+    if (currentAlgorithm.empty()) {
+        DrawText("No operation running", xPos, yPos, 14, Fade(TEXT_COLOR, 0.5f));
+    } else {
+        // Draw algorithm name
+        DrawText(currentAlgorithm.c_str(), xPos, yPos, 18, HIGHLIGHT_CUR);
+        yPos += 30;
+        
+        // Draw steps
+        DrawText("Steps:", xPos, yPos, 14, Fade(TEXT_COLOR, 0.8f));
+        yPos += 20;
+        
+        for (int i = 0; i < (int)algorithmSteps.size(); ++i) {
+            Color stepColor;
+            if (i < currentStep) {
+                stepColor = Fade(TEXT_COLOR, 0.4f); // Completed steps
+            } else if (i == currentStep) {
+                stepColor = HIGHLIGHT_TARGET; // Current step
+            } else {
+                stepColor = Fade(TEXT_COLOR, 0.6f); // Future steps
+            }
+            
+            string stepText = (i == currentStep ? "> " : "  ") + algorithmSteps[i];
+            // Word wrap for long lines
+            int maxWidth = ALGORITHM_PANEL_WIDTH - 24;
+            Vector2 textSize = MeasureTextEx(GetFontDefault(), stepText.c_str(), 12, 1);
+            
+            if (textSize.x > maxWidth) {
+                // Simple wrap - just truncate for now
+                string truncated = stepText.substr(0, 35) + "...";
+                DrawText(truncated.c_str(), xPos + 4, yPos, 12, stepColor);
+            } else {
+                DrawText(stepText.c_str(), xPos + 4, yPos, 12, stepColor);
+            }
+            yPos += 16;
+            
+            if (yPos > SCREEN_HEIGHT - 50) break; // Don't overflow panel
+        }
+    }
 }
 
 // --------------------------- Visual / UI helpers ---------------------------
@@ -426,9 +486,10 @@ struct UI {
         speedBtn.Draw();
         resetBtn.Draw();
 
-        // small hints with status
+        // small hints with status - positioned on the right side to avoid covering buttons
         string hint = isBusy ? "Animation in progress... (Reset to cancel)" : "Click nodes to highlight / select (visual only). Press Enter after typing number.";
-        DrawText(hint.c_str(), 12, UI_HEIGHT - 18, 14, Fade(TEXT_COLOR, 0.6f));
+        int hintX = SCREEN_WIDTH - MeasureText(hint.c_str(), 14) - 12;
+        DrawText(hint.c_str(), hintX, UI_HEIGHT - 18, 14, Fade(TEXT_COLOR, 0.6f));
     }
 
     void HandleInput() {
@@ -543,6 +604,9 @@ void UI::Reset() {
     animator.Clear();
     tree.Clear();
     ui.inputText.clear();
+    currentAlgorithm = "";
+    algorithmSteps.clear();
+    currentStep = -1;
 }
 void UI::OnEnterPressed() {
     // default: Insert with Enter
@@ -640,6 +704,19 @@ void AnimateReflow(float duration = 0.6f) {
 // Insert animation: compare nodes step-by-step, highlight comparisons, then add node and reflow
 void AnimateInsert(int value) {
     if (animator.IsBusy()) return; // don't start while busy
+    
+    // Set algorithm information
+    currentAlgorithm = "Insert (" + ToStr(value) + ")";
+    algorithmSteps = {
+        "1. Start at root",
+        "2. Compare with current",
+        "3. Go left if smaller",
+        "4. Go right if greater/equal",
+        "5. Insert at empty spot",
+        "6. Rebalance tree layout"
+    };
+    currentStep = 0;
+    
     // Step: traversing with comparisons; we will simulate path
     vector<shared_ptr<TreeNode>> path;
     auto cur = tree.root;
@@ -706,6 +783,19 @@ void AnimateInsert(int value) {
 // Search animation: step-by-step highlight nodes, stop if found
 void AnimateSearch(int value) {
     if (animator.IsBusy()) return;
+    
+    // Set algorithm information
+    currentAlgorithm = "Search (" + ToStr(value) + ")";
+    algorithmSteps = {
+        "1. Start at root",
+        "2. Compare with current",
+        "3. If equal, found!",
+        "4. If smaller, go left",
+        "5. If larger, go right",
+        "6. Repeat until found/null"
+    };
+    currentStep = 0;
+    
     auto cur = tree.root;
     if (!cur) {
         // nothing
@@ -738,6 +828,19 @@ void AnimateSearch(int value) {
 // Deletion animation: we will show comparisons to locate node, highlight it, then animate structural changes.
 void AnimateDelete(int value) {
     if (animator.IsBusy()) return;
+    
+    // Set algorithm information
+    currentAlgorithm = "Delete (" + ToStr(value) + ")";
+    algorithmSteps = {
+        "1. Find node to delete",
+        "2. Check children count",
+        "3. If leaf, remove it",
+        "4. If one child, replace",
+        "5. If two children, find successor",
+        "6. Rebalance tree layout"
+    };
+    currentStep = 0;
+    
     auto z = tree.Find(value);
     // First traverse and highlight path
     auto cur = tree.root;
@@ -783,6 +886,35 @@ void AnimateDelete(int value) {
 // Traversal animation: visit nodes in order and highlight them one by one
 void AnimateTraversal(const string &which) {
     if (animator.IsBusy()) return;
+    
+    // Set algorithm information
+    if (which == "in") {
+        currentAlgorithm = "In-Order Traversal";
+        algorithmSteps = {
+            "1. Visit left subtree",
+            "2. Visit current node",
+            "3. Visit right subtree",
+            "Result: Sorted order"
+        };
+    } else if (which == "pre") {
+        currentAlgorithm = "Pre-Order Traversal";
+        algorithmSteps = {
+            "1. Visit current node",
+            "2. Visit left subtree",
+            "3. Visit right subtree",
+            "Result: Root first"
+        };
+    } else {
+        currentAlgorithm = "Post-Order Traversal";
+        algorithmSteps = {
+            "1. Visit left subtree",
+            "2. Visit right subtree",
+            "3. Visit current node",
+            "Result: Root last"
+        };
+    }
+    currentStep = 0;
+    
     vector<shared_ptr<TreeNode>> order;
     if (which == "in") tree.InOrder(tree.root, order);
     else if (which == "pre") tree.PreOrder(tree.root, order);
@@ -896,6 +1028,14 @@ int main() {
         }
         
         EndMode2D();
+        
+        // Draw algorithm panel (left side)
+        DrawAlgorithmPanel();
+        
+        // Clear algorithm info when animation finishes
+        if (!animator.IsBusy() && !currentAlgorithm.empty()) {
+            currentStep = (int)algorithmSteps.size(); // Show all steps as complete
+        }
 
         // top UI (drawn after camera mode, so not affected by zoom)
         ui.Draw();
