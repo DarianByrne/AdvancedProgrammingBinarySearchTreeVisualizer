@@ -722,7 +722,10 @@ void AnimateInsert(int value) {
     auto cur = tree.root;
     if (!cur) {
         // tree empty: just create root with appear animation
+        // Step 0: node = root (but root is null, so skip to insert)
+        animator.Push(Step(0.01f, [](float t){ currentStep = 0; }, nullptr));
         animator.Push(Step(0.01f, nullptr, [=](){
+            currentStep = 5; // jump to insert step
             auto n = tree.InsertRaw(value);
             n->pos = { SCREEN_WIDTH/2.0f, UI_HEIGHT + 40.0f };
             n->targetPos = n->pos;
@@ -733,27 +736,49 @@ void AnimateInsert(int value) {
         AnimateReflow(0.6f);
         return;
     }
+    
+    // Step 0: node = root
+    animator.Push(Step(0.3f, [](float t){ currentStep = 0; }, nullptr));
+    
     // Build path for visual comparisons
     while (cur) {
         path.push_back(cur);
         if (value < cur->value) cur = cur->left;
         else cur = cur->right;
     }
+    
     // For each node in path, push step to highlight it (comparison)
     for (size_t i=0;i<path.size();++i) {
         auto node = path[i];
-        animator.Push(Step(0.45f, [node](float t){
+        bool goLeft = (value < node->value);
+        
+        // Step 1: while (node != null)
+        animator.Push(Step(0.15f, [](float t){ currentStep = 1; }, nullptr));
+        
+        // Step 2: if (value < node.value)
+        animator.Push(Step(0.2f, [node](float t){
+            currentStep = 2;
             node->highlighted = true;
             node->highlightColor = HIGHLIGHT_COMP;
-            node->animT = Lerp(node->animT, 1.0f, t); // no-op but shows progression
+        }, nullptr));
+        
+        // Step 3 or 4: node = node.left or node = node.right
+        animator.Push(Step(0.25f, [node, goLeft](float t){
+            currentStep = goLeft ? 3 : 4;
+            node->animT = Lerp(node->animT, 1.0f, t);
         }, [node](){
             node->highlighted = false;
         }));
     }
+    // Check loop condition one more time (will be false, exit loop)
+    animator.Push(Step(0.15f, [](float t){ currentStep = 1; }, nullptr));
+    
     // After comparisons, create the new node visually near last comparison node and animate insertion
     // Use a shared pointer to track the specific node we insert
     shared_ptr<shared_ptr<TreeNode>> insertedNodeRef = make_shared<shared_ptr<TreeNode>>(nullptr);
-    animator.Push(Step(0.02f, nullptr, [=](){
+    
+    // Step 5: insert new node at position
+    animator.Push(Step(0.02f, [](float t){ currentStep = 5; }, [=](){
         // insert raw into data structure
         auto newNode = tree.InsertRaw(value);
         *insertedNodeRef = newNode; // Store reference to the actual inserted node
@@ -769,7 +794,8 @@ void AnimateInsert(int value) {
     }));
     // tiny highlight of inserted node
     animator.Push(Step(0.4f, [=](float t){
-        // pulse highlight
+        // pulse highlight - keep showing insert step
+        currentStep = 5;
     }, [=](){
         // clear highlight on the specific node we inserted
         if (*insertedNodeRef) (*insertedNodeRef)->highlighted = false;
