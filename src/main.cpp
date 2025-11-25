@@ -708,12 +708,12 @@ void AnimateInsert(int value) {
     // Set algorithm information
     currentAlgorithm = "Insert (" + ToStr(value) + ")";
     algorithmSteps = {
-        "1. Start at root",
-        "2. Compare with current",
-        "3. Go left if smaller",
-        "4. Go right if greater/equal",
-        "5. Insert at empty spot",
-        "6. Rebalance tree layout"
+        "1. node = root",
+        "2. while (node != null)",
+        "3.   if (value < node.value)",
+        "4.     node = node.left",
+        "5.   else node = node.right",
+        "6. insert new node at position"
     };
     currentStep = 0;
     
@@ -787,12 +787,14 @@ void AnimateSearch(int value) {
     // Set algorithm information
     currentAlgorithm = "Search (" + ToStr(value) + ")";
     algorithmSteps = {
-        "1. Start at root",
-        "2. Compare with current",
-        "3. If equal, found!",
-        "4. If smaller, go left",
-        "5. If larger, go right",
-        "6. Repeat until found/null"
+        "1. node = root",
+        "2. while (node != null)",
+        "3.   if (value == node.value)",
+        "4.     return node",
+        "5.   else if (value < node.value)",
+        "6.     node = node.left",
+        "7.   else node = node.right",
+        "8. return null"
     };
     currentStep = 0;
     
@@ -832,12 +834,13 @@ void AnimateDelete(int value) {
     // Set algorithm information
     currentAlgorithm = "Delete (" + ToStr(value) + ")";
     algorithmSteps = {
-        "1. Find node to delete",
-        "2. Check children count",
-        "3. If leaf, remove it",
-        "4. If one child, replace",
-        "5. If two children, find successor",
-        "6. Rebalance tree layout"
+        "1. node = find(value)",
+        "2. if (node.left == null)",
+        "3.   replace node with right",
+        "4. else if (node.right == null)",
+        "5.   replace node with left",
+        "6. else successor = min(right)",
+        "7.   replace node with successor"
     };
     currentStep = 0;
     
@@ -891,26 +894,26 @@ void AnimateTraversal(const string &which) {
     if (which == "in") {
         currentAlgorithm = "In-Order Traversal";
         algorithmSteps = {
-            "1. Visit left subtree",
-            "2. Visit current node",
-            "3. Visit right subtree",
-            "Result: Sorted order"
+            "1. inorder(node.left)",
+            "2. visit(node)",
+            "3. inorder(node.right)",
+            "// Output: sorted order"
         };
     } else if (which == "pre") {
         currentAlgorithm = "Pre-Order Traversal";
         algorithmSteps = {
-            "1. Visit current node",
-            "2. Visit left subtree",
-            "3. Visit right subtree",
-            "Result: Root first"
+            "1. visit(node)",
+            "2. preorder(node.left)",
+            "3. preorder(node.right)",
+            "// Output: root first"
         };
     } else {
         currentAlgorithm = "Post-Order Traversal";
         algorithmSteps = {
-            "1. Visit left subtree",
-            "2. Visit right subtree",
-            "3. Visit current node",
-            "Result: Root last"
+            "1. postorder(node.left)",
+            "2. postorder(node.right)",
+            "3. visit(node)",
+            "// Output: root last"
         };
     }
     currentStep = 0;
