@@ -871,6 +871,10 @@ void AnimateDelete(int value) {
     currentStep = 0;
     
     auto z = tree.Find(value);
+    
+    // Step 0: node = find(value) - searching for the node
+    animator.Push(Step(0.2f, [](float t){ currentStep = 0; }, nullptr));
+    
     // First traverse and highlight path
     auto cur = tree.root;
     if (!cur) return;
@@ -883,6 +887,7 @@ void AnimateDelete(int value) {
     }
     for (auto &node : path) {
         animator.Push(Step(0.4f, [node](float t){
+            currentStep = 0; // Still finding
             node->highlighted = true;
             node->highlightColor = HIGHLIGHT_COMP;
         }, [node](){
@@ -895,17 +900,44 @@ void AnimateDelete(int value) {
         return;
     }
 
-    // Highlight target to be deleted
+    // Highlight target to be deleted - found it!
     animator.Push(Step(0.55f, [z](float t){
+        currentStep = 0; // Found the node
         z->highlighted = true;
         z->highlightColor = HIGHLIGHT_TARGET;
     }, nullptr));
 
+    // Determine which case applies and set the appropriate step
+    bool hasLeft = (z->left != nullptr);
+    bool hasRight = (z->right != nullptr);
+    int deleteStep = 1; // Will be set based on case
+    
+    if (!hasLeft) {
+        deleteStep = 1; // Step 1: if (node.left == null), then step 2: replace with right
+    } else if (!hasRight) {
+        deleteStep = 3; // Step 3: else if (node.right == null), then step 4: replace with left
+    } else {
+        deleteStep = 5; // Step 5: else (two children), find successor
+    }
+
+    // Show the condition check
+    animator.Push(Step(0.3f, [deleteStep](float t){
+        currentStep = deleteStep;
+    }, nullptr));
+    
+    // Show the action being taken
+    animator.Push(Step(0.3f, [deleteStep](float t){
+        currentStep = deleteStep + 1; // Move to the action step
+    }, nullptr));
+
     // We will perform deletion in tree structure but animate nodes moving:
     // Approach: perform the actual delete (modifying pointers), then reflow positions and animate movement.
-    animator.Push(Step(0.02f, nullptr, [=](){
+    animator.Push(Step(0.02f, [deleteStep](float t){
+        currentStep = deleteStep + 1; // Keep showing action during delete
+    }, [=](){
         tree.DeleteRaw(value);
     }));
+    
     // Reflow and animate - do this in a step's onFinish so it happens after deletion
     animator.Push(Step(0.01f, nullptr, [=](){
         AnimateReflow(0.8f);
