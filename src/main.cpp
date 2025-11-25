@@ -981,13 +981,64 @@ void AnimateTraversal(const string &which) {
     else if (which == "pre") tree.PreOrder(tree.root, order);
     else tree.PostOrder(tree.root, order);
 
-    for (auto &n : order) {
-        animator.Push(Step(0.5f, [n](float t){
-            n->highlighted = true;
-            n->highlightColor = HIGHLIGHT_CUR;
-        }, [n](){
-            n->highlighted = false;
-        }));
+    // Build position map to know where each node is in the traversal order
+    std::unordered_map<TreeNode*, int> nodeIndex;
+    for (int i = 0; i < (int)order.size(); ++i) {
+        nodeIndex[order[i].get()] = i;
+    }
+
+    for (int i = 0; i < (int)order.size(); ++i) {
+        auto n = order[i];
+        
+        if (which == "in") {
+            // In-order: left -> visit -> right
+            // Before visiting this node, we came from left (or it's first)
+            // After visiting, we go right (or it's done)
+            if (i == 0 || (n->left && nodeIndex.find(n->left.get()) != nodeIndex.end() && nodeIndex[n->left.get()] == i - 1)) {
+                // Just finished left subtree (or no left), about to visit
+                animator.Push(Step(0.15f, [](float t){ currentStep = 0; }, nullptr)); // Step 1: inorder(left)
+            }
+            animator.Push(Step(0.35f, [n](float t){
+                currentStep = 1; // Step 2: visit(node)
+                n->highlighted = true;
+                n->highlightColor = HIGHLIGHT_CUR;
+            }, [n](){
+                n->highlighted = false;
+            }));
+            if (i < (int)order.size() - 1) {
+                animator.Push(Step(0.15f, [](float t){ currentStep = 2; }, nullptr)); // Step 3: inorder(right)
+            }
+        } else if (which == "pre") {
+            // Pre-order: visit -> left -> right
+            animator.Push(Step(0.35f, [n](float t){
+                currentStep = 0; // Step 1: visit(node)
+                n->highlighted = true;
+                n->highlightColor = HIGHLIGHT_CUR;
+            }, [n](){
+                n->highlighted = false;
+            }));
+            if (n->left) {
+                animator.Push(Step(0.15f, [](float t){ currentStep = 1; }, nullptr)); // Step 2: preorder(left)
+            }
+            if (n->right) {
+                animator.Push(Step(0.15f, [](float t){ currentStep = 2; }, nullptr)); // Step 3: preorder(right)
+            }
+        } else {
+            // Post-order: left -> right -> visit
+            if (i == 0 || (n->left && nodeIndex.find(n->left.get()) != nodeIndex.end())) {
+                animator.Push(Step(0.15f, [](float t){ currentStep = 0; }, nullptr)); // Step 1: postorder(left)
+            }
+            if (n->right && nodeIndex.find(n->right.get()) != nodeIndex.end()) {
+                animator.Push(Step(0.15f, [](float t){ currentStep = 1; }, nullptr)); // Step 2: postorder(right)
+            }
+            animator.Push(Step(0.35f, [n](float t){
+                currentStep = 2; // Step 3: visit(node)
+                n->highlighted = true;
+                n->highlightColor = HIGHLIGHT_CUR;
+            }, [n](){
+                n->highlighted = false;
+            }));
+        }
     }
 }
 
